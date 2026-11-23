@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ChatRoomStatus" ADD VALUE 'COMPLETION_REQUESTED';

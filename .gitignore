@@ -1,0 +1,36 @@
+# Node.js
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Prisma generated files
+src/generated/prisma/
+
+# Uploaded user images
+/uploads/
+
+# Flutter generated files
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE and OS
+.idea/
+.DS_Store
+*.iml
+
+# Logs and local backups
+*.log
+*.dump
+*.sqlite
+*.sqlite3
+
+# Temporary local scripts
+/.backfill-point-transactions.js
+/.check-mentor-points.js
+/src/test-*.js

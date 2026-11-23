@@ -1,0 +1,258 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 사용자 유형
+enum UserRole {
+  MENTEE
+  MENTOR
+  ADMIN
+}
+
+// 학교급
+enum SchoolLevel {
+  ELEMENTARY
+  MIDDLE
+  HIGH
+}
+
+// 질문 진행 상태
+enum QuestionStatus {
+  OPEN
+  MATCHED
+  IN_PROGRESS
+  WAITING_REVIEW
+  CLOSED
+  CANCELED
+}
+
+enum ChatRoomStatus {
+  ACTIVE
+  COMPLETION_REQUESTED
+  COMPLETED
+}
+
+enum ReviewSentiment {
+  SATISFIED
+  UNSATISFIED
+}
+
+enum NotificationType {
+  QUESTION_MATCHED
+  CHAT_MESSAGE
+  COMPLETION_REQUESTED
+  REVIEW_SUBMITTED
+}
+
+// 사용자
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+
+  // 멘티 프로필
+  schoolLevel    SchoolLevel?
+  schoolName     String?
+  grade          Int?
+  schoolVerified Boolean      @default(false)
+
+  // 멘토 프로필
+  department     String?
+  studentId      String?
+  subjects       String[] @default([])
+  bio            String?
+  mentorApproved Boolean  @default(false)
+
+  // 크레딧
+  points Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menteeQuestions Question[] @relation("MenteeQuestions")
+  mentorQuestions Question[] @relation("MentorQuestions")
+
+  menteeChatRooms ChatRoom[] @relation("MenteeChatRooms")
+  mentorChatRooms ChatRoom[] @relation("MentorChatRooms")
+
+  sentMessages ChatMessage[] @relation("UserMessages")
+
+  submittedReviews  MentoringReview[]  @relation("MenteeReviews")
+  receivedReviews   MentoringReview[]  @relation("MentorReviews")
+  pointTransactions PointTransaction[]
+  notifications      Notification[]
+}
+
+// 질문
+model Question {
+  id String @id @default(uuid())
+
+  menteeId String
+  mentorId String?
+
+  schoolLevel SchoolLevel
+  grade       Int
+  subject     String
+  curriculum  String?
+  content     String?     @db.Text
+
+  status QuestionStatus @default(OPEN)
+
+  mentee User @relation("MenteeQuestions", fields: [menteeId], references: [id], onDelete: Restrict)
+
+  mentor User? @relation("MentorQuestions", fields: [mentorId], references: [id], onDelete: SetNull)
+
+  images   QuestionImage[]
+  chatRoom ChatRoom?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([menteeId, status])
+  @@index([mentorId, status])
+  @@index([status, createdAt])
+}
+
+// 질문에 첨부된 이미지
+model QuestionImage {
+  id          String  @id @default(uuid())
+  questionId  String
+  storagePath String  @unique
+  mimeType    String?
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([questionId])
+}
+
+model ChatRoom {
+  id         String @id @default(uuid())
+  questionId String @unique
+
+  menteeId String
+  mentorId String
+
+  status      ChatRoomStatus @default(ACTIVE)
+  completedAt DateTime?
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  mentee User @relation("MenteeChatRooms", fields: [menteeId], references: [id], onDelete: Restrict)
+
+  mentor User @relation("MentorChatRooms", fields: [mentorId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+  review   MentoringReview?
+
+  @@index([menteeId])
+  @@index([mentorId])
+  @@index([status])
+}
+
+model ChatMessage {
+  id String @id @default(uuid())
+
+  chatRoomId String
+  senderId   String
+
+  content String    @db.Text
+  readAt  DateTime?
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+
+  sender User @relation("UserMessages", fields: [senderId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([chatRoomId, createdAt])
+  @@index([senderId])
+}
+
+// 멘토링 후기
+model MentoringReview {
+  id         String @id @default(uuid())
+  chatRoomId String @unique
+  menteeId   String
+  mentorId   String
+
+  rating                Int?
+  sentiment             ReviewSentiment?
+  comment               String?          @db.Text
+  dissatisfactionReason String?          @db.Text
+
+  pointsAwarded Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Restrict)
+  mentee   User     @relation("MenteeReviews", fields: [menteeId], references: [id], onDelete: Restrict)
+  mentor   User     @relation("MentorReviews", fields: [mentorId], references: [id], onDelete: Restrict)
+
+  @@index([mentorId, createdAt])
+  @@index([menteeId, createdAt])
+}
+
+// 포인트 거래 유형
+enum PointTransactionType {
+  EARNED
+  SPENT
+  ADJUSTED
+}
+
+// 포인트 발생 원인
+enum PointTransactionSource {
+  MENTORING_REVIEW
+  OTHER
+}
+
+// 포인트 적립 및 사용 내역
+model PointTransaction {
+  id          String                 @id @default(uuid())
+  userId      String
+  type        PointTransactionType
+  amount      Int // 적립은 양수, 사용은 음수
+  description String
+  source      PointTransactionSource
+  sourceId    String
+  createdAt   DateTime               @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  // 같은 원인으로 중복 지급되는 것을 방지
+  @@unique([userId, source, sourceId])
+  @@index([userId, createdAt])
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String
+  type       NotificationType
+  title      String
+  body       String           @db.Text
+  chatRoomId String?
+  questionId String?
+  readAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@index([chatRoomId])
+  @@index([questionId])
+}
+
